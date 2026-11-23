@@ -7,6 +7,8 @@
  * 用法：
  *   ./eta-rwf-dec-oracle <hex>
  *
+ * 原仓（转译来源）：https://github.com/Refinitiv/Real-Time-SDK @ 7d219a600（Apache-2.0，LSEG/Refinitiv）
+ *
  * 编译（Linux，需 RTSDK 头文件与 librssl.so）：
  *   INC=<Real-Time-SDK>/Cpp-C/Eta/Include
  *   gcc -DLinux -o /tmp/eta_rwf_dec_oracle eta-rwf-dec-oracle.c \

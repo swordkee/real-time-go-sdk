@@ -10,7 +10,7 @@
 
 | 用途 | 位置 |
 | --- | --- |
-| 线上格式权威实现（逐条翻译依据） | `Real-Time-SDK/Cpp-C/Eta/Impl/Util/Include/rtr/rwfNetwork.h`（`rwfGet*` 原语）、`Impl/Codec/messageDecoders.c`（消息头）、`Impl/Codec/fieldListDecoder.c`、`Impl/Codec/primitiveDecoders.c`、`Impl/Codec/rwfConvert.c`（Real→字符串） |
+| 线上格式权威实现（逐条翻译依据；原仓 `https://github.com/Refinitiv/Real-Time-SDK` @ `7d219a600`） | `Real-Time-SDK/Cpp-C/Eta/Impl/Util/Include/rtr/rwfNetwork.h`（`rwfGet*` 原语）、`Impl/Codec/messageDecoders.c`（消息头）、`Impl/Codec/fieldListDecoder.c`、`Impl/Codec/primitiveDecoders.c`、`Impl/Codec/rwfConvert.c`（Real→字符串） |
 | 枚举/结构定义 | `Real-Time-SDK/Cpp-C/Eta/Include/Codec/rtr/*.h` |
 | 域模型规格 | `Docs/ETAC_DevGuide.pdf`、`ETAC_RDMUsageGuide.pdf`、`API_ConceptsGuide.pdf` |
 | 字段字典 | `RDMFieldDictionary`、`enumtype.def` |

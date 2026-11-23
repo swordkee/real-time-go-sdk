@@ -3,6 +3,8 @@
  * 目的：给纯 Go 的 rwf/encode（rwf/encode）提供**逐字节黄金基准**，
  * 让「编码必须与 C 完全一致」变成可复跑的门禁（基准值记录在 rwf/encode_test.go）。
  *
+ * 原仓（转译来源）：https://github.com/Refinitiv/Real-Time-SDK @ 7d219a600（Apache-2.0，LSEG/Refinitiv）
+ *
  * 编译（Linux，需 RTSDK 头文件与 librssl.so）：
  *   INC=<Real-Time-SDK>/Cpp-C/Eta/Include
  *   gcc -DLinux -o /tmp/eta_enc_oracle eta-rwf-enc-oracle.c \

@@ -6,6 +6,11 @@ Consumer。**零 cgo、零 `.so`、零 purego** —— `CGO_ENABLED=0` 可编译
 > 这是对 LSEG RTSDK C 实现的独立 Go 转译（逐条对照 `Impl/Codec`、`Impl/Transport` 的协议布局），
 > 供需要在无闭源库环境下直连 TREP/ADS 的 Go 服务使用。不是 LSEG 官方 SDK，不包含任何 LSEG 二进制或头文件。
 
+**原仓地址（转译来源）**：`https://github.com/Refinitiv/Real-Time-SDK`（LSEG/Refinitiv Real-Time SDK，
+Apache-2.0）；本项目对照的是 `7d219a600`（2026-09-16，RTSDK 2.4.1.L1 / ETA C 3.10.1.0）
+的 `Cpp-C/Eta/{Impl,Include,etc}` 与 `Cpp-C/Ema/Src`。版权归 LSEG/Refinitiv，见原仓 LICENSE；
+本仓只做语言级转换与等价测试，不含原仓任何二进制/头文件。
+
 ## 包结构
 
 | 包 | 职责 |
