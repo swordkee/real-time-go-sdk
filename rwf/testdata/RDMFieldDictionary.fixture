@@ -1,0 +1,16 @@
+! Minimal RDMFieldDictionary FIXTURE for rwf tests.
+!
+! 这不是 LSEG 官方字典（官方文件由部署方提供，见 configs 的
+! channels.reuters.rdm_field_dictionary）；这里只按官方同名格式裁剪出 PoC
+! 用到的少数条目，列序与官方一致：
+!
+!   ACRONYM  "DESCRIPTION"  FID  RIPPLES TO  FIELD TYPE  LENGTH  RWF TYPE  RWF LEN
+!
+DSPLY_NAME "DISPLAY NAME"           3  NULL        ALPHANUMERIC       16  RMTES_STRING    16
+TIMACT     "TIME OF UPDATE"         5  NULL        TIME                5  TIME             5
+TRDPRC_1   "LAST"                   6  TRDPRC_2    PRICE              17  REAL64           7
+ACTIV_DATE "ACTIVE DATE"           17  NULL        DATE               11  DATE             4
+BID        "BID"                   22  BID_1       PRICE              17  REAL64           7
+ASK        "ASK"                   25  ASK_1       PRICE              17  REAL64           7
+MID_PRICE  "MID-PRICE"            134  NULL        PRICE              17  REAL64           7
+QUOTIM_MS  "QUOTIM MS"           3855  NULL        INTEGER            15  UINT64           4

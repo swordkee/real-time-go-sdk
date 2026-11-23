@@ -1,0 +1,2 @@
+# 单静态二进制目标：任何平台都不编 cgo
+* text=auto eol=lf

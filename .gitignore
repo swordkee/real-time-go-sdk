@@ -1,0 +1,11 @@
+# build / test artifacts
+/bin/
+*.test
+*.out
+coverage.*
+
+# editor / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
