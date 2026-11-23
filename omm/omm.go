@@ -46,7 +46,9 @@ type Msg struct {
 	Name      string            // 订阅标的（RIC）
 	State     *State            // refresh / status 携带
 	Fields    map[string]string // MARKET_PRICE 的字段原文（BID/ASK/TIMACT…）
-	At        time.Time
+	// SeqNum 报文序号；nil = 该报文未携带（与 EMA 的 hasSeqNum 语义一致，不补 0）。
+	SeqNum *int64
+	At     time.Time
 }
 
 // Client 是 EMA OmmConsumerClient 的等价接口：应用只实现这三个回调。
@@ -121,9 +123,14 @@ type Config struct {
 	DefaultServiceID uint16
 
 	ReconnectBackoff time.Duration // 首次重连退避，默认 1s（指数增长，封顶 30s）
-	PingInterval     time.Duration // 主动心跳间隔，默认 15s
-	Fields           []string      // 要交付的字段，默认 fields.DefaultFields
-	Logger           *slog.Logger  // 可选；nil = slog.Default()（标准库 log/slog）
+	PingInterval     time.Duration // 主动心跳**发送间隔**，默认 15s
+	// PingTimeout 写入 conn request 的**超时窗口**（秒粒度），与 PingInterval 刻意解耦：
+	// C 的 pingTimeout 是「对方多久收不到我方数据就断开」的窗口，不是「我方发送间隔」。
+	// 缺省 = max(60s, 3×PingInterval)。把 10s 发送间隔同时广播成 10s 超时窗口会让
+	// ADS 用 10s 空闲窗口和我们 10s 的 ping 赛跑，30 分钟内被 FIN 8 次（2026-11-23 实测）。
+	PingTimeout time.Duration
+	Fields      []string     // 要交付的字段，默认 fields.DefaultFields
+	Logger      *slog.Logger // 可选；nil = slog.Default()（标准库 log/slog）
 }
 
 // subscription 一路订阅（streamId ↔ 请求 ↔ 客户端）。
@@ -200,6 +207,13 @@ func NewConsumer(cfg Config) (*Consumer, error) {
 	}
 	if cfg.PingInterval <= 0 {
 		cfg.PingInterval = 15 * time.Second
+	}
+	if cfg.PingTimeout <= 0 {
+		// 超时窗口必须明显大于发送间隔；否则服务端按我们广告的短窗口 FIN。
+		cfg.PingTimeout = 60 * time.Second
+		if want := 3 * cfg.PingInterval; want > cfg.PingTimeout {
+			cfg.PingTimeout = want
+		}
 	}
 	dict, err := rwf.LoadFieldDictionary(cfg.DictionaryFile)
 	if err != nil {
@@ -278,13 +292,21 @@ func (cfg Config) newTransport() (Transport, error) {
 	if cfg.TransportFactory != nil {
 		return cfg.TransportFactory(cfg)
 	}
+	// PingTimeout 是广播给服务端的窗口；PingInterval 只决定我们多久发一次 ping。
+	pingTimeout := cfg.PingTimeout
+	if pingTimeout <= 0 {
+		pingTimeout = 60 * time.Second
+		if want := 3 * cfg.PingInterval; want > pingTimeout {
+			pingTimeout = want
+		}
+	}
 	nc, err := native.New(native.Config{
 		Host:           cfg.Host,
 		Port:           cfg.Port,
 		Username:       cfg.Username,
 		Position:       cfg.Position,
 		Application:    cfg.Application,
-		PingTimeout:    cfg.PingInterval,
+		PingTimeout:    pingTimeout,
 		ConnectTimeout: 10 * time.Second,
 	})
 	if err != nil {

@@ -92,6 +92,9 @@ func New(cfg Config) (*Conn, error) {
 	return &Conn{cfg: cfg}, nil
 }
 
+// PingTimeout 返回写入 conn request 的超时窗口（诊断用）。
+func (c *Conn) PingTimeout() time.Duration { return c.cfg.PingTimeout }
+
 // Connect 建 TCP + 完成 RIPC 握手（到 ACTIVE）。
 func (c *Conn) Connect() error {
 	c.mu.Lock()

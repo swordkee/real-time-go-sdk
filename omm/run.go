@@ -171,6 +171,10 @@ func (c *Consumer) dispatch(m *rwf.Msg) {
 			Text:   string(m.State.Text),
 		}
 	}
+	if m.HasSeqNum {
+		n := int64(m.SeqNum)
+		msg.SeqNum = &n
+	}
 	switch m.Class {
 	case rwf.MsgClassRefresh, rwf.MsgClassUpdate:
 		if fields, err := c.extr.Extract(m.Body); err == nil {

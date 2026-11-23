@@ -180,6 +180,9 @@ func TestDecodeRealFrames(t *testing.T) {
 	if m2.SeqNum != 50222 {
 		t.Errorf("帧 2 seqNum = %d，期望 50222", m2.SeqNum)
 	}
+	if !m2.HasSeqNum {
+		t.Error("帧 2 应标记 HasSeqNum=true")
+	}
 	if m2.Key.Flags != 0 {
 		t.Errorf("帧 2 不应带 msgKey，实得 flags=0x%x", m2.Key.Flags)
 	}

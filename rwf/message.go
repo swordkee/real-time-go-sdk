@@ -195,6 +195,7 @@ type Msg struct {
 	Flags           uint16 // refresh/update/status/request/generic/post/close/ack 的 flags
 	State           *State // refresh / status
 	SeqNum          uint32
+	HasSeqNum       bool // 报文是否真的带 seqNum（区分 0 与「未携带」）
 	SecondarySeqNum uint32
 	GroupID         []byte
 	HasQos          bool
@@ -448,6 +449,7 @@ func decodeRefresh(r *reader, m *Msg, hdrEnd int) error {
 		if m.SeqNum, err = r.u32(); err != nil {
 			return err
 		}
+		m.HasSeqNum = true
 	}
 	st, err := decodeState(r)
 	if err != nil {
@@ -538,6 +540,7 @@ func decodeUpdate(r *reader, m *Msg, hdrEnd int) error {
 		if m.SeqNum, err = r.u32(); err != nil {
 			return err
 		}
+		m.HasSeqNum = true
 	}
 	if m.Flags&UpdateHasConfInfo != 0 {
 		if _, err = r.resBitU15(); err != nil { // conflationCount
@@ -720,6 +723,7 @@ func decodeGeneric(r *reader, m *Msg, hdrEnd int) error {
 		if m.SeqNum, err = r.u32(); err != nil {
 			return err
 		}
+		m.HasSeqNum = true
 	}
 	if m.Flags&GenericHasSecondarySeqNum != 0 {
 		if m.SecondarySeqNum, err = r.u32(); err != nil {
@@ -796,6 +800,7 @@ func decodePost(r *reader, m *Msg, hdrEnd int) error {
 		if m.SeqNum, err = r.u32(); err != nil {
 			return err
 		}
+		m.HasSeqNum = true
 	}
 	if m.Flags&PostHasPostID != 0 {
 		if m.PostID, err = r.u32(); err != nil {
@@ -899,6 +904,7 @@ func decodeAck(r *reader, m *Msg, hdrEnd int) error {
 		if m.SeqNum, err = r.u32(); err != nil {
 			return err
 		}
+		m.HasSeqNum = true
 	}
 	if m.Flags&AckHasMsgKey != 0 {
 		ks, err := r.resBitU15()
