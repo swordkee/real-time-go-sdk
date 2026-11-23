@@ -8,6 +8,9 @@ import (
 	"github.com/swordkee/real-time-go-sdk/rwf"
 )
 
+// idlePollInterval 是 Read 无数据时的休眠长度；10ms 兼顾新订阅提交延迟与 CPU 占用。
+const idlePollInterval = 10 * time.Millisecond
+
 // Run 启动 EMA 消费循环（阻塞直到 ctx 取消）：
 //
 //	connect → login → (login refresh OK) → 提交全部订阅 → 读循环 dispatch
@@ -86,8 +89,9 @@ func (c *Consumer) runOnce(ctx context.Context, tx Transport) error {
 			continue
 		}
 		if len(res.Data) == 0 {
-			// 无消息：让出 CPU（rsslRead 非阻塞）。
-			time.Sleep(time.Millisecond)
+			// 无消息：让出 CPU。1ms 轮询在 30 分钟长稳里占到 ~11% 单核（纯 Go 解码
+			// 本身另有开销），10ms 足够及时（订阅提交最多延迟一个间隔），CPU 显著下降。
+			time.Sleep(idlePollInterval)
 			// 登录后仍可能有「Run 期间新注册」的订阅，顺手补发。
 			if loggedIn {
 				if err := c.submitPending(tx); err != nil {
