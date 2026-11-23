@@ -84,13 +84,17 @@ type MsgKey struct {
 	// HasFilter/HasIdent 显式控制 optional 字段（0 值也是合法值）。
 	HasFilter bool
 	HasIdent  bool
+	// HasServiceID 让调用方显式要求 HAS_SERVICE_ID（即使 serviceId==0，
+	// 对应 C 里 key.flags 带 RSSL_MKF_HAS_SERVICE_ID 而 serviceId 为 0 的情形）。
+	HasServiceID bool
 }
 
 // LoginRequest 编码 raw REQUEST/LOGIN（streamId + msgKey.name=username + nameType=RIC）。
 //
 // 与 C 侧 `encode_request(stream=1, domain=LOGIN, flags=HAS_NAME|HAS_NAME_TYPE,
 // nameType=1, name="username", requestFlags=STREAMING)` 逐字节一致：
-// `00150101000000010400800b06083032357a7873705401`（23 字节）。
+// `00150101000000010400800b0608757365726e616d6501`（23 字节，见
+// docs/reference/eta-rwf-enc-oracle.c 的 LOGIN 输出）。
 func LoginRequest(streamID int32, username string) ([]byte, error) {
 	return Request(streamID, DomainLogin, MsgKey{Name: username, NameType: NameTypeRIC}, RequestStreaming)
 }
@@ -98,7 +102,8 @@ func LoginRequest(streamID int32, username string) ([]byte, error) {
 // MarketPriceRequest 编码一条 MARKET_PRICE item request（带数字 serviceId）。
 //
 // 与 C 侧 serviceId=999 / name=TEST / stream=3 的编码逐字节一致：
-// `00140106000000030400800a07fe0167045841473d01`（22 字节）。
+// `00140106000000030400800a07fe03e7045445535401`（22 字节，见
+// docs/reference/eta-rwf-enc-oracle.c 的 ITEM999 输出）。
 func MarketPriceRequest(streamID int32, serviceID uint16, name string) ([]byte, error) {
 	return Request(streamID, DomainMarketPrice,
 		MsgKey{ServiceID: serviceID, Name: name, NameType: NameTypeRIC}, RequestStreaming)
@@ -113,7 +118,7 @@ func Request(streamID int32, domain uint8, key MsgKey, requestFlags uint16) ([]b
 		return nil, fmt.Errorf("%w: %d 字节", ErrNameTooLong, len(key.Name))
 	}
 	keyFlags := uint16(MsgKeyHasName)
-	if key.ServiceID > 0 {
+	if key.HasServiceID || key.ServiceID > 0 {
 		keyFlags |= MsgKeyHasServiceID
 	}
 	if key.NameType != 0 {

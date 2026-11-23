@@ -106,7 +106,7 @@ CGO_ENABLED=0 go run ./examples/eta-probe
 | 字典下载（dictionary domain）或本地字典热加载 | 1-2 人天 | 低 | 当前依赖本地 RDMFieldDictionary 文件 |
 | item 级 status/恢复策略细化（StreamClosed/恢复后重订阅、permission 拒绝、item 失效重建） | 2-3 人天 | 中 | 目前统一「断开重连即全量重发」 |
 | RMTES→UTF-8（中文/扩展字符 DSPLY_NAME） | 2-3 人天 | 中 | 当前未实现；对端下发中文时必须补 |
-| LZ4/zlib 压缩 | 2-3 人天 | 低-中 | **当前主动不协商**（conn request 压缩位图长度 0）；对端强开压缩时 fail-closed |
+| LZ4/zlib 压缩 | 已完成 | 低-中 | **客户端不请求压缩**（conn request 位图长度 0）；服务端强制时按 C 语义解压（zlib 持续流 / LZ4 block，见 `ripc/compress.go`），未知类型 fail-closed |
 | 生产接线（把 omm 接到具体业务的下游过滤/分发层） | 1-2 人天 | 低 | omm 交付全部 refresh+update，过滤属适配层 |
 
 ## 8. 构建与复现

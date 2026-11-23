@@ -60,7 +60,7 @@ func (c *Consumer) runOnce(ctx context.Context, tx Transport) error {
 		return err
 	}
 	c.logger().Info("ETA-EMA channel 已连接", "host", c.cfg.Host, "port", c.cfg.Port,
-		"username", c.cfg.Username, "subs", c.subCount())
+		"subs", c.subCount())
 	if err := tx.Login(); err != nil {
 		return err
 	}

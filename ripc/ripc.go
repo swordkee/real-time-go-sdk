@@ -12,9 +12,10 @@
 //   - ipcIntWrtHeader()    ping = 仅 3 字节头（len=3, opcode=IPC_DATA），无 payload
 //
 // 设计取舍：
-//   - **不协商压缩**（conn request 的压缩位图长度 = 0）。服务端因此不会压缩（C 侧同逻辑：
-//     客户端位图为空 ⇒ inDecompress/outCompression 0），我们可以完全不实现 LZ4/zlib；
-//     若对端仍回非 0 压缩类型，本实现 fail-closed 报错（不静默解错字节）。
+//   - **不请求压缩**（conn request 的压缩位图长度 = 0），但**支持服务端强制压缩**：
+//     connack 帧 flags 的 RSSL_COMP_FORCE(0x80) 或 comp 字段指定类型时，按 C 语义启用
+//     解压（zlib 持续流 / LZ4 block，见 compress.go）；非法类型 fail-closed。
+//     发送侧永不压缩（C 的 zlib 发送阈值 = maxMsgSize，请求远小于它）。
 //   - 读侧用独立 goroutine 把完整 RWF 消息投进带缓冲 channel；Read() 非阻塞取。
 //   - 所有长度/装配都做越界校验（fail-closed），不信任对端。
 package ripc
@@ -38,8 +39,8 @@ import (
 const (
 	ipcExtendedFlags = 0x01 // 后面还有 1 字节 extended flags
 	ipcData          = 0x02 // 普通未压缩数据（完整性校验位）
-	ipcCompData      = 0x04 // 压缩数据（本实现不协商压缩）
-	ipcCompFrag      = 0x08 // 压缩分片（本实现不协商压缩）
+	ipcCompData      = 0x04 // 压缩数据（服务端强制压缩时启用）
+	ipcCompFrag      = 0x08 // 压缩分片（压缩数据被拆成两帧，LZ4 大消息）
 	ipcPacking       = 0x10 // 本帧内打包了多条消息
 )
 
@@ -153,6 +154,12 @@ type Conn struct {
 	negotiatedRWF [2]byte
 	peerPing      byte
 	compression   uint16
+
+	// 压缩传输（connack 指定后启用；发送侧永不压缩——conn request 的压缩位图为空，
+	// 且 C 侧 zlib 发送阈值 = maxMsgSize，我们的请求远小于它）。
+	decomp decompressor
+	// compPending 对应 C 的 tempDecompressBuf：IPC_COMP_FRAG 的第一段先缓存，第二段到达后一起解压。
+	compPending []byte
 
 	// v14 key exchange（connack 里下发的 P/G/send_key；sharedKey 仅保留以便未来应用层加解密）。
 	exType    byte
@@ -358,10 +365,15 @@ func (c *Conn) processConnAck(b []byte) error {
 	c.peerPing = b[13]
 	c.negotiatedRWF = [2]byte{b[14], b[15]}
 	c.compression = binary.BigEndian.Uint16(b[16:18])
-	if c.compression != 0 {
-		// 我们没协商压缩（位图长度 0），对端仍指定压缩 = 无法安全解码，fail-closed。
-		return fmt.Errorf("%w: 服务端强制压缩类型 %d（本实现未协商压缩）", ErrProtocol, c.compression)
+	// C ipcWaitAck（RIPC_VERSION_11..14）：if ((flags & RSSL_COMP_FORCE) && (!comp)) comp = RSSL_COMP_ZLIB;
+	// 注意 flags 是 connack 的**帧 flags 字节**（buf[2]），不是 buf[12] 的 rsslFlags。
+	if flags&compForce != 0 && c.compression == 0 {
+		c.compression = compZlib
 	}
+	if c.compression > compLZ4 {
+		return fmt.Errorf("%w: 服务端指定未知压缩类型 %d", ErrProtocol, c.compression)
+	}
+	c.decomp = newDecompressor(byte(c.compression), int(c.maxUserMsg))
 	if c.ripcVersion > 8 { // RIPC_VERSION_13 以上带 key exchange + 组件版本段
 		c.parseKeyExchange(b)
 	}
@@ -389,6 +401,11 @@ func (c *Conn) parseKeyExchange(b []byte) {
 }
 
 // sendClientKey 对照 ipcSendClientKey()：算 client_send_key 并发 12 字节帧。
+//
+// 与 C 的对应关系：
+//   - C 只在 encryptionType == TR_SL_1 && P != 0 时计算；否则回 0 长度 key 帧（并清 shared_key）；
+//   - 随机数 C 用 randull()（全 64 位，无区间约束）；这里用 crypto/rand 取全 64 位，
+//     协议字节与 C 完全同构（随机源更强，不影响互通）。
 func (c *Conn) sendClientKey() error {
 	if c.exType != trSL1 || len(c.pBytes) != 8 {
 		// 与 C 一致：不知道对端类型时回 0 长度 key。
@@ -397,16 +414,14 @@ func (c *Conn) sendClientKey() error {
 	p := new(big.Int).SetBytes(c.pBytes)
 	g := new(big.Int).SetBytes(c.gBytes)
 	srv := new(big.Int).SetBytes(c.sendKey)
-	if p.Sign() <= 0 || srv.Sign() <= 0 {
+	if p.Sign() == 0 { // C: P != 0
 		return c.writeRaw([]byte{0x00, 0x04, keyExchange, 0x00})
 	}
-	// r ∈ [2, p-2)
-	span := new(big.Int).Sub(p, big.NewInt(3))
-	r, err := rand.Int(rand.Reader, span)
-	if err != nil {
+	var rb [8]byte
+	if _, err := rand.Read(rb[:]); err != nil {
 		return fmt.Errorf("ripc: key exchange 随机数失败: %w", err)
 	}
-	r.Add(r, big.NewInt(2))
+	r := new(big.Int).SetUint64(binary.BigEndian.Uint64(rb[:]))
 	clientKey := new(big.Int).Exp(g, r, p)
 	shared := new(big.Int).Exp(srv, r, p)
 	var kb [8]byte
@@ -458,9 +473,6 @@ func (c *Conn) readRawFrame() ([]byte, error) {
 // dispatchFrame 解析数据帧（对照 ipcReadSession + rsslSocketRead 的 unpack/frag 逻辑）。
 func (c *Conn) dispatchFrame(b []byte) error {
 	opCode := b[2]
-	if opCode&ipcCompData != 0 {
-		return fmt.Errorf("%w: 收到压缩帧（未协商压缩）", ErrProtocol)
-	}
 	hdrLen := dataHeaderLen
 	var extOp byte
 	if opCode&ipcExtendedFlags != 0 {
@@ -493,6 +505,12 @@ func (c *Conn) dispatchFrame(b []byte) error {
 		return fmt.Errorf("%w: 帧头长度超帧（%d > %d）", ErrProtocol, hdrLen, len(b))
 	}
 	payload := b[hdrLen:]
+
+	// 压缩帧：payload 是压缩数据，解压后再按 PACKING 拆分/投递（C: ipcReadSession 的
+	// 「decompress before processing the rest of the header」）。
+	if opCode&ipcCompData != 0 {
+		return c.dispatchCompressed(opCode, payload)
+	}
 
 	if isFragFirst {
 		if fragTotal == 0 || fragTotal > maxFrameBudget {
@@ -545,6 +563,43 @@ func (c *Conn) appendFragment(fragID uint16, p []byte) error {
 	if done {
 		c.emit(event{data: out})
 	}
+	return nil
+}
+
+// dispatchCompressed 处理压缩数据帧（对照 ipcReadSession 的压缩分支）：
+//   - IPC_COMP_FRAG：压缩数据的第一段，先缓存（C 的 tempDecompressBuf），等第二段；
+//   - 第二段（只有 IPC_COMP_DATA）：与缓存拼接后整体解压；
+//   - 解压后的 payload 再按 PACKING 拆分（压缩与 packing 可以叠加）。
+func (c *Conn) dispatchCompressed(opCode byte, payload []byte) error {
+	if c.decomp == nil {
+		return fmt.Errorf("%w: 未协商压缩却收到压缩帧", ErrProtocol)
+	}
+	if opCode&ipcCompFrag != 0 {
+		if len(c.compPending)+len(payload) > maxFrameBudget {
+			return fmt.Errorf("%w: 压缩分片累计超过上限", ErrProtocol)
+		}
+		c.compPending = append(c.compPending, payload...)
+		return nil
+	}
+	comp := payload
+	if len(c.compPending) > 0 {
+		comp = make([]byte, 0, len(c.compPending)+len(payload))
+		comp = append(comp, c.compPending...)
+		comp = append(comp, payload...)
+		c.compPending = nil
+	}
+	out, err := c.decomp.Decompress(comp)
+	if err != nil {
+		return fmt.Errorf("%w: 解压失败: %v", ErrProtocol, err)
+	}
+	if opCode&ipcPacking != 0 {
+		return c.dispatchPacked(out)
+	}
+	if len(out) == 0 {
+		c.emit(event{ping: true})
+		return nil
+	}
+	c.emit(event{data: out})
 	return nil
 }
 

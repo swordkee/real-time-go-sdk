@@ -159,3 +159,24 @@ func TestFilterAndIdentifier(t *testing.T) {
 		t.Fatalf("filter/identifier 不对: %d/%d", m.Key.Filter, m.Key.Identifier)
 	}
 }
+
+// TestExplicitServiceIDZero 覆盖 C 里 HAS_SERVICE_ID + serviceId=0 的形态
+// （不能靠 serviceId>0 推导 flag，否则这类 key 无法表达）。
+func TestExplicitServiceIDZero(t *testing.T) {
+	b, err := Request(3, rwf.DomainMarketPrice, MsgKey{
+		ServiceID: 0, HasServiceID: true, Name: "TEST", NameType: 1,
+	}, RequestStreaming)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := rwf.DecodeMsg(b)
+	if err != nil {
+		t.Fatalf("回解失败: %v", err)
+	}
+	if m.Key.Flags&rwf.MsgKeyHasServiceID == 0 {
+		t.Fatalf("key flags 缺 HAS_SERVICE_ID: 0x%x", m.Key.Flags)
+	}
+	if m.Key.ServiceID != 0 || string(m.Key.Name) != "TEST" {
+		t.Fatalf("key 不对: serviceId=%d name=%q", m.Key.ServiceID, string(m.Key.Name))
+	}
+}

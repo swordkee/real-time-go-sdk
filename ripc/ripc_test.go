@@ -379,8 +379,9 @@ func TestCompressedFrameRejected(t *testing.T) {
 	}
 }
 
-// TestServerCompressionRejected connack 指定压缩类型 → 握手 fail-closed。
-func TestServerCompressionRejected(t *testing.T) {
+// TestServerCompressionUnknownRejected connack 指定未知压缩类型(3) → 握手 fail-closed。
+// （已知类型 1/2 现在支持，见 compress_test.go。）
+func TestServerCompressionUnknownRejected(t *testing.T) {
 	srv, cli := tcpPair(t)
 	defer srv.Close()
 	defer cli.Close()
@@ -392,13 +393,13 @@ func TestServerCompressionRejected(t *testing.T) {
 	go func() {
 		_ = readPipe(t, srv)
 		ack := connAck(9, 6144, 60, false)
-		// 把 comp 改成 LZ4(1)（偏移：2 长度 + 1 flags + 1 opCode + 1 hdrLen + 1 + 4 version + 2 maxMsg + 1 + 1 + 1 + 1 = 16）
-		binary.BigEndian.PutUint16(ack[16:18], 1)
+		// comp 字段在偏移 16..17
+		binary.BigEndian.PutUint16(ack[16:18], 3)
 		_, _ = srv.Write(ack)
 	}()
 
 	if _, err := New(cli, cfg); !errors.Is(err, ErrProtocol) {
-		t.Fatalf("服务端压缩应报 ErrProtocol，实际 %v", err)
+		t.Fatalf("未知压缩类型应报 ErrProtocol，实际 %v", err)
 	}
 }
 

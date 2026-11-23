@@ -19,6 +19,7 @@ package omm
 
 import (
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -122,7 +123,7 @@ type Config struct {
 	ReconnectBackoff time.Duration // 首次重连退避，默认 1s（指数增长，封顶 30s）
 	PingInterval     time.Duration // 主动心跳间隔，默认 15s
 	Fields           []string      // 要交付的字段，默认 fields.DefaultFields
-	Logger           Logger        // 可选日志器，nil = 标准库 stderr 输出（见 logger.go）
+	Logger           *slog.Logger  // 可选；nil = slog.Default()（标准库 log/slog）
 }
 
 // subscription 一路订阅（streamId ↔ 请求 ↔ 客户端）。
@@ -190,9 +191,6 @@ func NewConsumer(cfg Config) (*Consumer, error) {
 	}
 	if cfg.Application == "" {
 		cfg.Application = "256"
-	}
-	if cfg.Logger == nil {
-		cfg.Logger = NewStdLogger()
 	}
 	if len(cfg.Fields) == 0 {
 		cfg.Fields = fields.DefaultFields
@@ -293,12 +291,4 @@ func (cfg Config) newTransport() (Transport, error) {
 		return nil, err
 	}
 	return nativeTransport{conn: nc}, nil
-}
-
-// logger 取日志器（永远非 nil：NewConsumer 兜底；直接构造的 Consumer 也有 std 兜底）。
-func (c *Consumer) logger() Logger {
-	if c.cfg.Logger == nil {
-		return stdLogger{}
-	}
-	return c.cfg.Logger
 }

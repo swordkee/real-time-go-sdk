@@ -43,6 +43,10 @@ func (e *QuoteExtractor) wanted(name string) bool {
 //
 // 字段条目 dataType 通常是 0（UNKNOWN），此时用字典里的类型解码（与 Java
 // `fe.getDataType() == UNKNOWN → fiddef.getOMMType()` 一致）。
+//
+// 空值（BLANK_DATA：0 长度、或 DATE/TIME 的全 255 形态）按「无该字段」处理；
+// 其它解码错误（INVALID_DATA/INCOMPLETE_DATA）原样返回 —— 与 C 的返回码一致，
+// 不把坏字段静默当成空值。
 func (e *QuoteExtractor) Extract(body []byte) (map[string]string, error) {
 	fl, err := DecodeFieldList(body)
 	if err != nil {
@@ -61,8 +65,11 @@ func (e *QuoteExtractor) Extract(body []byte) (map[string]string, error) {
 		if dt == DataUnknown {
 			dt = def.DataType
 		}
-		v, ok := decodeFieldValue(dt, def.Name, fe.raw)
-		if !ok || v == "" {
+		v, present, err := decodeFieldValue(dt, def.Name, fe.raw)
+		if err != nil {
+			return nil, err
+		}
+		if !present {
 			continue
 		}
 		if def.Name == "DSPLY_NAME" {
@@ -74,65 +81,96 @@ func (e *QuoteExtractor) Extract(body []byte) (map[string]string, error) {
 }
 
 // decodeFieldValue 按类型解一个字段的「原文」。
-func decodeFieldValue(dt uint8, name string, payload []byte) (string, bool) {
+// present=false 表示线上是空值（BLANK_DATA），不是错误。
+func decodeFieldValue(dt uint8, name string, payload []byte) (string, bool, error) {
+	wrap := func(err error) error {
+		return fmt.Errorf("字段 %s(type=%d,len=%d): %w", name, dt, len(payload), err)
+	}
 	switch dt {
 	case DataReal:
 		r, err := DecodeReal(payload)
-		if err != nil || r.Blank {
-			return "", false
+		if err != nil {
+			if err == ErrBlankData {
+				return "", false, nil
+			}
+			return "", false, wrap(err)
 		}
-		return r.String(), true
+		if r.Blank {
+			return "", false, nil
+		}
+		return r.String(), true, nil
 	case DataAsciiStr, DataBuffer, DataRmtesStr, DataUTF8Str:
 		b, err := DecodeBuffer(payload)
-		if err != nil || len(b) == 0 {
-			return "", false
+		if err != nil {
+			if err == ErrBlankData {
+				return "", false, nil
+			}
+			return "", false, wrap(err)
 		}
 		// RMTES 在本 ADS 上是纯 ASCII（实测 "BROKER       GFX"）；非 ASCII 扩展留待后续（同 Java RFA）。
-		return string(b), true
+		return string(b), true, nil
 	case DataDate:
 		d, err := DecodeDate(payload)
 		if err != nil {
-			return "", false
+			if err == ErrBlankData {
+				return "", false, nil
+			}
+			return "", false, wrap(err)
 		}
-		return d.String(), true
+		return d.String(), true, nil
 	case DataTime:
 		t, err := DecodeTime(payload)
 		if err != nil {
-			return "", false
+			if err == ErrBlankData {
+				return "", false, nil
+			}
+			return "", false, wrap(err)
 		}
-		return t.String(), true
+		return t.String(), true, nil
 	case DataDateTime:
 		d, err := DecodeDateTime(payload)
 		if err != nil {
-			return "", false
+			if err == ErrBlankData {
+				return "", false, nil
+			}
+			return "", false, wrap(err)
 		}
 		if isTimeField(name) {
-			return d.Time.String(), true
+			return d.Time.String(), true, nil
 		}
 		if isDateField(name) {
-			return d.Date.String(), true
+			return d.Date.String(), true, nil
 		}
-		return "", false
+		return "", false, nil
 	case DataUInt:
 		v, err := DecodeUInt(payload)
 		if err != nil {
-			return "", false
+			if err == ErrBlankData {
+				return "", false, nil
+			}
+			return "", false, wrap(err)
 		}
-		return strconv.FormatUint(v, 10), true
+		return strconv.FormatUint(v, 10), true, nil
 	case DataInt:
 		v, err := DecodeInt(payload)
 		if err != nil {
-			return "", false
+			if err == ErrBlankData {
+				return "", false, nil
+			}
+			return "", false, wrap(err)
 		}
-		return strconv.FormatInt(v, 10), true
+		return strconv.FormatInt(v, 10), true, nil
 	case DataEnum:
 		v, err := DecodeEnum(payload)
 		if err != nil {
-			return "", false
+			if err == ErrBlankData {
+				return "", false, nil
+			}
+			return "", false, wrap(err)
 		}
-		return strconv.FormatUint(uint64(v), 10), true
+		return strconv.FormatUint(uint64(v), 10), true, nil
 	}
-	return "", false
+	return "", false, nil
 }
 
 // DefaultFields 默认报价字段集合（与 Java DefaultFields / 另一条路的 config.go 同集合）。

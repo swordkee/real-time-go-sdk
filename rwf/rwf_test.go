@@ -44,7 +44,7 @@ func loadFrames(t *testing.T) [][]byte {
 
 // TestDecodeRealFrames 用真实 ADS 报文验证「消息头 + field list + 字典 + 报价字段」全链路。
 //
-// 期望值全部由 ETA C 库（rwf_oracle3.c，同一份 RDMFieldDictionary）解码得出，
+// 期望值全部由 ETA C 库（docs/reference/eta-rwf-dec-oracle.c，同一份 RDMFieldDictionary）解码得出，
 // 见 docs/eta-pure-go-poc.md §参照输出。
 func TestDecodeRealFrames(t *testing.T) {
 	frames := loadFrames(t)
@@ -117,7 +117,7 @@ func TestDecodeRealFrames(t *testing.T) {
 	if fl1.Entries[0].FieldID != 1 {
 		t.Errorf("帧 1 首条目 fid = %d，期望 1", fl1.Entries[0].FieldID)
 	}
-	// 逐字节对拍 field entry payload（hex 取自 ETA C 库 rwf_oracle4.c 的实际输出）：
+	// 逐字节对拍 field entry payload（hex 由 docs/reference/eta-rwf-dec-oracle.c 的实际输出给出）：
 	// 这是最强锁 —— 只要变长编码/长度前缀错一字节，payload hex 就对不上。
 	wantPayload := map[uint16]string{
 		3:    "42524f4b455220202020202020474658", // DSPLY_NAME "BROKER       GFX"

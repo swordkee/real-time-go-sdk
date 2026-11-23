@@ -50,7 +50,9 @@
 
 ### 3.2 与 C 库逐字节对拍（最强锁）
 
-C 侧 oracle 打印每个 field entry 的 **payload hex**，Go 侧测试断言同一份 hex：
+C 侧 oracle（`docs/reference/eta-rwf-dec-oracle.c`，读一条 hex → rsslDecodeMsg + rsslDecodeFieldList
++ rsslDecodeReal/Time/Date/UInt）打印每个 field entry 的 **payload hex** 与 C 解码结果，
+Go 侧测试断言同一份 hex：
 
 ```
 BID        fid=22   payload=0a068268  → 42.6600
@@ -100,7 +102,7 @@ $ go test -count=1 ./rwf/
 | REAL/DATE/TIME/DATETIME 全量边界（含 blank 哨兵、微秒/纳秒） | `numeric.c`+`dtime.c` ≈1900 行 | ≈600 行 | 2 | 低 |
 | RMTES → UTF-8（DSPLY_NAME 的中文/扩展字符） | `rsslRmtes.c` 1339 行 | ≈500 行 | 2-3 | 中：字符集表要从 `rsslcnvtab.c` 抽；**未实现** |
 | 消息**编码**（Request/Login/字段列表构造）（**已完成**，见 §8.2） | `messageEncoders.c`+`primitiveEncoders.c` ≈3700 行 | ≈1200 行 | 4 | 中：必须与 C 逐字节一致才能被 ADS 接受 |
-| RIPC 传输层（握手/connack/心跳/fragment）（**已完成**，见 §8.1） | `rsslSocketTransportImpl.c` 1.1 万行（大多 SSL/HTTP/WS，可裁） | ≈1500 行 | 5-7 | 中-高：握手版本协商/connack 错会「连上但立刻断」；**压缩未协商（位图 0）故未实现 LZ4/zlib** |
+| RIPC 传输层（握手/connack/心跳/fragment/压缩解压）（**已完成**，见 §8.1） | `rsslSocketTransportImpl.c` 1.1 万行（大多 SSL/HTTP/WS，可裁） | ≈1500 行 | 5-7 | 中-高：握手版本协商/connack 错会「连上但立刻断」；压缩解压按 C（zlib 持续流 + LZ4 block），发送侧不压缩（位图 0） |
 | DACS 登录 + 目录请求 + 服务 id 解析 | 域模型 + `msgs.c` | ≈500 行 | 2 | 中：目录请求要发 ElementList，且要处理 multipart 目录 |
 | 状态机/重连/心跳/订阅编排 | — | ≈800 行 | 3-4 | 中 |
 | 测试夹具与对拍工具（C oracle + 逐字节比对） | — | ≈400 行 | 2 | 低 |

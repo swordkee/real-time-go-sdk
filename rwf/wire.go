@@ -28,6 +28,10 @@ var ErrInvalidData = errors.New("rwf: 报文非法（INVALID_DATA）")
 // ErrEndOfContainer 字段表条目已读完。对应 RSSL_RET_END_OF_CONTAINER。
 var ErrEndOfContainer = errors.New("rwf: 容器结束（END_OF_CONTAINER）")
 
+// ErrBlankData 值存在但为空（线上 0 长度，或 DATE/TIME/DATETIME 的全 255 空值）。
+// 对应 RSSL_RET_BLANK_DATA：不是错误数据，调用方应按「无值」处理。
+var ErrBlankData = errors.New("rwf: 空值（BLANK_DATA）")
+
 // reader 在 byte 切片上的大端游标（RWF 全部是大端 / 网络序）。
 type reader struct {
 	b   []byte
