@@ -175,6 +175,9 @@ type Transport interface {
 	Connect() error
 	Login() error
 	Submit(item string, serviceID uint16, streamID int32) error
+	// SubmitBatch 一次提交全部 pending item（native 实现为单个 packing 帧）。
+	// 自定义实现若不支持批量，可退化为逐条 Submit；失败须返回错误（不得静默吞错）。
+	SubmitBatch(items []SubmitItem) error
 	Read() (ReadResult, error)
 	Ping()
 	Shutdown()

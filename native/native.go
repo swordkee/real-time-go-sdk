@@ -164,6 +164,40 @@ func (c *Conn) Submit(item string, serviceID uint16, streamID int32) error {
 	return nil
 }
 
+// SubmitItem 一条待提交的 market price item request（批量提交用）。
+type SubmitItem struct {
+	Item      string
+	ServiceID uint16
+	StreamID  int32
+}
+
+// SubmitBatch 把多条 item request 编码后打成**一个** RIPC packing 帧提交（watchlist 批量订阅）。
+// 单条 Submit API 保持不变；批量为空时是空操作（不产生帧，避免 poll 循环空转报错）。
+func (c *Conn) SubmitBatch(items []SubmitItem) error {
+	if len(items) == 0 {
+		return nil
+	}
+	rc, err := c.conn()
+	if err != nil {
+		return err
+	}
+	msgs := make([][]byte, 0, len(items))
+	for _, it := range items {
+		b, err := encode.MarketPriceRequest(it.StreamID, it.ServiceID, it.Item)
+		if err != nil {
+			return err
+		}
+		msgs = append(msgs, b)
+	}
+	if err := rc.WriteMessages(msgs); err != nil {
+		return fmt.Errorf("native: 批量发送 %d 条 item request 失败: %w", len(msgs), err)
+	}
+	if c.cfg.Logf != nil {
+		c.cfg.Logf("native: 批量 item request 已发送（%d 条，单个 packing 帧）", len(msgs))
+	}
+	return nil
+}
+
 // CloseStream 发送 CLOSE（取消一条订阅；EMA watchlist 关闭流时用）。
 func (c *Conn) CloseStream(streamID int32, domain uint8) error {
 	rc, err := c.conn()

@@ -153,6 +153,47 @@ func TestLoginAndSubmitBytes(t *testing.T) {
 	}
 }
 
+// TestSubmitBatchPackingGolden 批量提交必须打成**一个** packing 帧：
+// opcode=0x12，帧内逐条 [u16 len][msg]，两条 item request 的字节与单条 Submit 黄金值一致。
+func TestSubmitBatchPackingGolden(t *testing.T) {
+	cn, srv := dialNative(t)
+	defer srv.Close()
+
+	err := cn.SubmitBatch([]SubmitItem{
+		{Item: "AAA", ServiceID: 999, StreamID: 3},
+		{Item: "BBB", ServiceID: 999, StreamID: 4},
+	})
+	if err != nil {
+		t.Fatalf("SubmitBatch: %v", err)
+	}
+	frame, ok := readFrame(srv)
+	if !ok {
+		t.Fatal("服务端未读到批量帧")
+	}
+	// total=3+(2+21)+(2+21)=49=0x31；每条 21 字节（name 3 字符 → keySize=9，与 4 字符黄金值差 1）。
+	const want = "003112" +
+		"0015" + "00130106000000030400800907fe03e70341414101" +
+		"0015" + "00130106000000040400800907fe03e70342424201"
+	if got := hex.EncodeToString(frame); got != want {
+		t.Fatalf("批量 packing 帧不对:\n got=%s\nwant=%s", got, want)
+	}
+}
+
+// TestSubmitBatchEmptyNoFrame 空批量不得产生任何帧（poll 循环空转时不能刷帧）。
+func TestSubmitBatchEmptyNoFrame(t *testing.T) {
+	cn, srv := dialNative(t)
+	defer srv.Close()
+	if err := cn.SubmitBatch(nil); err != nil {
+		t.Fatalf("空批量不应报错: %v", err)
+	}
+	_ = srv.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+	_, err := srv.Read(make([]byte, 1))
+	_ = srv.SetReadDeadline(time.Time{})
+	if err == nil {
+		t.Fatal("空批量不应产生任何帧")
+	}
+}
+
 func TestReadMapping(t *testing.T) {
 	cn, srv := dialNative(t)
 	defer srv.Close()

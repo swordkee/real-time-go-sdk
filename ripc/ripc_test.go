@@ -434,6 +434,93 @@ func TestWriteMessageHeader(t *testing.T) {
 	}
 }
 
+// TestWriteMessagesPackingGolden 锁住 packing 写帧的逐字节布局（对照 C 侧 ipcWriteSession：
+// flags |= IPC_PACKING，帧内 [u16 len][msg]…）。两条短消息 → 一个 12 字节帧。
+func TestWriteMessagesPackingGolden(t *testing.T) {
+	srv, cli := tcpPair(t)
+	defer srv.Close()
+	defer cli.Close()
+
+	cfg := DefaultConfig()
+	cfg.Host = "127.0.0.1"
+	cfg.Port = 1
+	cfg.Timeout = 2 * time.Second
+	got := make(chan []byte, 1)
+	go func() {
+		serveHandshake(t, srv, connAck(9, 6144, 60, false))
+		got <- readPipe(t, srv)
+	}()
+
+	c, err := New(cli, cfg)
+	if err != nil {
+		t.Fatalf("握手失败: %v", err)
+	}
+	defer c.Close()
+
+	m1 := []byte{0xAA, 0x01}
+	m2 := []byte{0xBB, 0x02, 0x03}
+	if err := c.WriteMessages([][]byte{m1, m2}); err != nil {
+		t.Fatalf("WriteMessages 失败: %v", err)
+	}
+	frame := <-got
+	// total=3+(2+2)+(2+3)=12；opcode=IPC_DATA|IPC_PACKING=0x12；逐条 u16 大端长度。
+	const want = "000c12" + "0002aa01" + "0003bb0203"
+	match := func(b []byte) bool { return hex.EncodeToString(b) == want }
+	if g := hex.EncodeToString(frame); g != want {
+		t.Fatalf("packing 帧与 C 布局不一致:\n got=%s\nwant=%s", g, want)
+	}
+
+	// 变异自检（证明 golden 可证伪、不是假绿）：若实现漏掉 ipcPacking 位、或把消息长度写错，
+	// 同一断言必须转红。
+	noPacking := append([]byte(nil), frame...)
+	noPacking[2] &^= ipcPacking
+	if match(noPacking) {
+		t.Fatal("变异体1（去掉 ipcPacking 位）未被 golden 拒绝 ⇒ 门禁假绿")
+	}
+	badLen := append([]byte(nil), frame...)
+	badLen[3] = 0x03 // 首条 msg 长度 2 → 3
+	if match(badLen) {
+		t.Fatal("变异体2（消息长度写错）未被 golden 拒绝 ⇒ 门禁假绿")
+	}
+}
+
+// TestWriteMessagesFailClosed 空列表 / 空消息 / 超协商上限必须 fail-closed。
+func TestWriteMessagesFailClosed(t *testing.T) {
+	srv, cli := tcpPair(t)
+	defer srv.Close()
+	defer cli.Close()
+
+	cfg := DefaultConfig()
+	cfg.Host = "127.0.0.1"
+	cfg.Port = 1
+	cfg.Timeout = 2 * time.Second
+	go func() { serveHandshake(t, srv, connAck(9, 4, 60, false)) }() // maxUserMsg=4
+
+	c, err := New(cli, cfg)
+	if err != nil {
+		t.Fatalf("握手失败: %v", err)
+	}
+	defer c.Close()
+
+	for _, tc := range []struct {
+		name string
+		msgs [][]byte
+	}{
+		{"nil 列表", nil},
+		{"空列表", [][]byte{}},
+		{"含空消息", [][]byte{{1, 2}, nil}},
+		{"单条超 maxUserMsg", [][]byte{{1, 2, 3, 4, 5}}},
+	} {
+		if err := c.WriteMessages(tc.msgs); !errors.Is(err, ErrProtocol) {
+			t.Fatalf("%s 应报 ErrProtocol，实际 %v", tc.name, err)
+		}
+	}
+	// 合法消息不应被误拒（两条 2 字节消息，整帧 7 字节）。
+	if err := c.WriteMessages([][]byte{{1, 2}, {3, 4}}); err != nil {
+		t.Fatalf("合法 packing 不应失败: %v", err)
+	}
+}
+
 // tryReadFrame 读一帧；失败返回 error（给 goroutine 用，避免 t.Fatalf 跨 goroutine）。
 func tryReadFrame(c net.Conn) ([]byte, error) {
 	_ = c.SetReadDeadline(time.Now().Add(2 * time.Second))

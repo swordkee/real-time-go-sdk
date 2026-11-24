@@ -700,6 +700,52 @@ func (c *Conn) WriteMessage(payload []byte) error {
 	return c.writeRaw(b)
 }
 
+// maxPackingFrame 是帧头 uint16 长度字段上限；整帧超过它必须 fail-closed（不能静默截断）。
+const maxPackingFrame = 0xFFFF
+
+// WriteMessages 把多条 RWF 消息打进**一个** packing 帧提交（对照 C 侧
+// Impl/Transport/rsslSocketTransportImpl.c 的 ipcWriteSession()：packingOffset>0 时
+// flags |= IPC_PACKING，帧内逐条 rwfPut16 写 [u16 len][msg]…，见 2038/10837 行；
+// 读侧 rsslSocketRead() 的 ipcOpcode & IPC_PACKING 拆包见 1500/9925 行）。
+//
+// 帧布局（3 字节头 + packing payload）：
+//
+//	[u16 total_len][u8 IPC_DATA|IPC_PACKING][u16 len1][msg1][u16 len2][msg2]…
+//
+// 空列表 / 空消息 / 单条超协商 maxUserMsg / 单条或整帧超 uint16 长度上限一律 fail-closed。
+// 整帧经 writeRaw 串行写出（协议要求帧不被并发撕裂）。
+func (c *Conn) WriteMessages(msgs [][]byte) error {
+	if len(msgs) == 0 {
+		return fmt.Errorf("%w: packing 消息列表为空", ErrProtocol)
+	}
+	total := dataHeaderLen
+	for _, m := range msgs {
+		if len(m) == 0 {
+			return fmt.Errorf("%w: packing 含空消息", ErrProtocol)
+		}
+		if c.maxUserMsg > 0 && len(m) > int(c.maxUserMsg) {
+			return fmt.Errorf("%w: packing 消息 %d 字节超过协商上限 %d", ErrProtocol, len(m), c.maxUserMsg)
+		}
+		if len(m) > maxPackingFrame {
+			return fmt.Errorf("%w: packing 单条消息 %d 字节超过 uint16 长度上限", ErrProtocol, len(m))
+		}
+		total += 2 + len(m)
+	}
+	if total > maxPackingFrame {
+		return fmt.Errorf("%w: packing 整帧 %d 字节超过 uint16 长度上限", ErrProtocol, total)
+	}
+
+	b := make([]byte, 0, total)
+	b = append(b, 0, 0, ipcData|ipcPacking)
+	for _, m := range msgs {
+		b = binary.BigEndian.AppendUint16(b, uint16(len(m)))
+		b = append(b, m...)
+	}
+	b[0] = byte(len(b) >> 8)
+	b[1] = byte(len(b))
+	return c.writeRaw(b)
+}
+
 // Ping 发心跳（3 字节空数据帧，对照 ipcIntWrtHeader）。
 func (c *Conn) Ping() error {
 	return c.writeRaw([]byte{0x00, 0x03, ipcData})

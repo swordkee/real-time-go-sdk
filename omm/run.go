@@ -198,7 +198,8 @@ func (c *Consumer) dispatch(m *rwf.Msg) {
 	}
 }
 
-// submitPending 提交所有「登录后尚未发过 item request」的订阅。
+// submitPending 把所有「登录后尚未发过 item request」的订阅一次性批量提交（单个 packing 帧）。
+// 失败不静默吞错：返回给 runOnce → Run 的重连/error 路径。
 func (c *Consumer) submitPending(tx Transport) error {
 	c.mu.Lock()
 	type item struct {
@@ -216,16 +217,23 @@ func (c *Consumer) submitPending(tx Transport) error {
 		pending = append(pending, item{s.req.Name, s.serviceID, s.streamID, s})
 	}
 	c.mu.Unlock()
-
-	for _, it := range pending {
-		if err := tx.Submit(it.name, it.svc, it.stream); err != nil {
-			return fmt.Errorf("omm: 提交订阅 %q 失败: %w", it.name, err)
-		}
-		c.logger().Info("ETA-EMA item request 已发送", "item", it.name, "serviceId", it.svc, "streamId", it.stream)
-		c.mu.Lock()
-		it.sub.submitted = true
-		c.mu.Unlock()
+	if len(pending) == 0 {
+		return nil
 	}
+
+	batch := make([]SubmitItem, 0, len(pending))
+	for _, it := range pending {
+		batch = append(batch, SubmitItem{Item: it.name, ServiceID: it.svc, StreamID: it.stream})
+	}
+	if err := tx.SubmitBatch(batch); err != nil {
+		return fmt.Errorf("omm: 批量提交 %d 条订阅失败: %w", len(batch), err)
+	}
+	c.mu.Lock()
+	for _, it := range pending {
+		it.sub.submitted = true
+	}
+	c.mu.Unlock()
+	c.logger().Info("ETA-EMA 批量 item request 已发送", "count", len(pending))
 	return nil
 }
 
