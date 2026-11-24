@@ -21,7 +21,11 @@ Apache-2.0）；本项目对照的是 `7d219a600`（2026-09-16，RTSDK 2.4.1.L1 
 | `github.com/swordkee/real-time-go-sdk/native` | 传输客户端外壳：`Connect/Login/Submit/Read/Ping/Shutdown`（RIPC + RWF 编码编排） |
 | `github.com/swordkee/real-time-go-sdk/omm` | EMA 高级语义：`Consumer` / `RegisterClient` / 三类回调 / 登录→订阅→重连状态机；`Transport` 接口可注入 |
 | `github.com/swordkee/real-time-go-sdk/fields` | MARKET_PRICE 字段名字面值（`BID`/`ASK`…）与默认字段集 |
+| `github.com/swordkee/real-time-go-sdk/directory` | RDM Source Directory（domain=4）：请求编码 + serviceId/serviceName 解析（含 DELETE），对照 `rsslRDMDirectoryMsg.c` |
+| `github.com/swordkee/real-time-go-sdk/rmtes` | RMTES→UTF-8 全表转换（21,203 表项，机械转写 `rsslRmtes.c`/`rsslcnvtab.c`，Apache-2.0 署名） |
 | `examples/eta-probe` | 最小联调示例（环境变量传参，登录 → 订阅 → 收报价） |
+
+`omm.submitPending` 将所有待订阅项打成**一个 RIPC packing 帧**批量提交（对照 C `ipcWriteSession` 的 `IPC_PACKING`），重连后整批重订阅。
 
 依赖图（无环）：`omm → native + rwf + fields`，`native → ripc + rwf/encode`。
 

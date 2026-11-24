@@ -9,3 +9,6 @@ coverage.*
 .vscode/
 .DS_Store
 Thumbs.db
+
+# local worktrees
+.worktrees/
