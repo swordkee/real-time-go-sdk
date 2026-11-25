@@ -102,9 +102,13 @@ grep -rn 'dlopen\|librssl' --include='*.go' .        # → 无输出
 ## 范围与限制
 
 - 已实现：raw login（用户名，不带密码）、MARKET_PRICE 域订阅（任意 RIC）、refresh/update/status、
-  分片与打包帧、v14 key exchange、心跳、watchlist 式断线重订阅。
-- 未实现：directory service 自动发现（serviceId 由配置/`ReqMsg` 显式给出）、压缩协商（不协商，对端回压缩即 fail-closed）、
-  除 MARKET_PRICE 外的域、DACS 密码登录。
+  分片与打包帧、v14 key exchange、心跳、watchlist 批量请求与断线整批重订阅。
+- 已提供 `directory` 包：RDM Source Directory（domain=4）请求编码与 serviceId/serviceName 解码（含 DELETE）；
+  消费端仍可由配置/`ReqMsg` 显式给 serviceId，目录自动发现接入由业务编排决定。
+- 已支持 zlib（含 preset dictionary）与 LZ4 block 压缩/解压；连接请求会广播压缩协商标志，
+  对端强制压缩不再 fail-closed；zlib reader 复用与 LZ4 overlap memmove 降低分配/CPU。
+- 已提供 `rmtes` 包：RMTES→UTF-8 全表转换（21,203 表项，含控制字符/多字节/游标命令）。
+- 未实现：除 MARKET_PRICE 外的消费域、DACS 密码登录。
 - 依赖 `RDMFieldDictionary`（LSEG 官方字段字典）做 FID → 字段名映射；仓库内的
   `rwf/testdata/RDMFieldDictionary.fixture` 只是 8 条裁剪夹具，仅供测试。
   完整字典可放到 `RDM_FIELD_DICTIONARY` 环境变量指向的路径，`rwf` 包会跑完整字典断言。
